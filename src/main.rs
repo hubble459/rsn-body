@@ -1,10 +1,17 @@
 use glam::Vec3;
+use bevy::prelude::*;
 
 use crate::orbital_entity::OrbitalEntity;
 
 mod orbital_entity;
 
 fn main() {
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins);
+
+    app.run();
+
     let mut entities = [
         // Sun
         OrbitalEntity::new(Vec3::ZERO, Vec3::ZERO, 1.989e30),
