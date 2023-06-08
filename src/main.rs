@@ -1,3 +1,5 @@
+use std::ops::Neg;
+
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     math::Vec3,
@@ -5,6 +7,7 @@ use bevy::{
     sprite::MaterialMesh2dBundle,
 };
 use rand::Rng;
+use rayon::prelude::*;
 
 use crate::orbital_entity::OrbitalEntity;
 
@@ -58,80 +61,51 @@ fn add_components(
 
 fn update_bodies(
     mut world: ResMut<World>,
-    mut body_query: Query<(&OrbitalEntity, &mut Transform)>,
+    mut body_query: Query<(&mut OrbitalEntity, &mut Transform)>,
 ) {
     let bodies = &mut world.0;
 
-    let mut averages = vec![];
-    for i in 0..bodies.len() {
-        let mut average_acc = Vec2::ZERO;
+    let averages = (0..bodies.len())
+        .into_par_iter()
+        .map(|i| {
+            (0..bodies.len())
+                .into_par_iter()
+                .map(|j| {
+                    // If not self
+                    if i != j {
+                        // Calculate suCtiOn power
+                        let e1 = &bodies[i];
+                        let e2 = &bodies[j];
+                        let r_vector = e1.r_vector(e2);
+                        let r_mag = e1.pos().distance(e2.pos());
+                        r_vector / r_mag * (e2.mass / 200.0)
+                    } else {
+                        Vec2::ZERO
+                    }
+                })
+                .sum::<Vec2>()
+                .neg()
+                * TIME_STEP
+        })
+        .collect::<Vec<Vec2>>();
 
-        for j in 0..bodies.len() {
-            // If not self
-            if i != j {
-                // Calculate suCtiOn power
-                let e1 = &bodies[i];
-                let e2 = &bodies[j];
-                let r_vector = e1.r_vector(e2);
-                let r_mag = e1.pos().distance(e2.pos());
-                average_acc -= r_vector / r_mag * (e2.mass / 30.0);
-            }
-        }
+    bodies
+        .par_iter_mut()
+        .zip(averages)
+        .for_each(|(entity, avg)| {
+            entity.vx += avg.x * TIME_STEP;
+            entity.vy += avg.y * TIME_STEP;
+            entity.x += entity.vx * TIME_STEP;
+            entity.y += entity.vy * TIME_STEP;
+        });
 
-        averages.push(average_acc * TIME_STEP as f32);
-    }
-
-    let mut index = 0;
-    for (_, mut transform) in body_query.iter_mut() {
-        let updated_body = &mut bodies[index];
-        let avg = averages[index];
-        updated_body.vx += avg.x * TIME_STEP;
-        updated_body.vy += avg.y * TIME_STEP;
-
-        updated_body.x += updated_body.vx * TIME_STEP;
-        updated_body.y += updated_body.vy * TIME_STEP;
+    for (i, (_, mut transform)) in body_query.iter_mut().enumerate() {
+        let updated_body = &bodies[i];
 
         transform.translation.x = updated_body.x;
         transform.translation.y = updated_body.y;
-        index += 1;
     }
 }
-
-// fn next_frame(mut query: Query<(&mut Transform, &mut OrbitalEntity)>) {
-//     let mut averages = vec![];
-
-//     for (i, (_, entity1)) in query.iter().enumerate() {
-//         let mut average_gravity = Vec3::ZERO;
-//         for (j, (_, entity2)) in query.iter().enumerate() {
-//             if i != j {
-//                 let r_vector = entity1.position - entity2.position;
-//                 let r_mag = r_vector
-//                     .to_array()
-//                     .into_iter()
-//                     .fold(0.0, |sum, a| sum + a * a)
-//                     .sqrt();
-//                 let acc = -1.0 * BIG_G * entity2.mass / r_mag.powf(2.0);
-//                 average_gravity += r_vector / r_mag * acc;
-//             }
-//         }
-
-//         averages.push(average_gravity * TIME_STEP as f32);
-//     }
-
-//     for (avg, (mut transform, mut entity)) in averages.into_iter().zip(query.iter_mut()) {
-//         entity.velocity += avg * TIME_STEP as f32;
-
-//         let bonus_velocity: Vec3 = entity.velocity * TIME_STEP as f32;
-//         entity.position = (entity.position + bonus_velocity).clamp(
-//             glam::Vec3::splat(f32::MIN + 1.0),
-//             glam::Vec3::splat(f32::MAX - 1.0),
-//         );
-
-//         transform.translation = entity.position / 1e20;
-
-//         // println!("pos: {:#?}", entity.position);
-//     }
-// }
 
 #[derive(Resource)]
 struct World(Vec<OrbitalEntity>);

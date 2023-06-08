@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Clone, Component)]
+#[derive(Clone, Component, PartialEq)]
 pub struct OrbitalEntity {
     pub x: f32,
     pub y: f32,
