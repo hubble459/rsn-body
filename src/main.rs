@@ -1,4 +1,4 @@
-use std::ops::Neg;
+use std::{cell::RefCell, ops::Neg, rc::Rc};
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -24,7 +24,7 @@ fn add_components(
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    world: Res<World>,
+    // world: Res<World>,
 ) {
     let mut rng = rand::thread_rng();
     // Camera
@@ -36,7 +36,9 @@ fn add_components(
         ..Default::default()
     });
 
-    for (index, entity) in world.0.iter().enumerate() {
+    let entities = initialize_bodies();
+
+    for (index, entity) in entities.iter().enumerate() {
         commands
             .spawn(MaterialMesh2dBundle {
                 material: materials.add(ColorMaterial::from(Color::Rgba {
@@ -60,51 +62,25 @@ fn add_components(
 }
 
 fn update_bodies(
-    mut world: ResMut<World>,
+    // mut world: ResMut<World>,
     mut body_query: Query<(&mut OrbitalEntity, &mut Transform)>,
 ) {
-    let bodies = &mut world.0;
-
-    let averages = (0..bodies.len())
-        .into_par_iter()
-        .map(|i| {
-            (0..bodies.len())
-                .into_par_iter()
-                .map(|j| {
-                    // If not self
-                    if i != j {
-                        // Calculate suCtiOn power
-                        let e1 = &bodies[i];
-                        let e2 = &bodies[j];
-                        let r_vector = e1.r_vector(e2);
-                        let r_mag = e1.pos().distance(e2.pos());
-                        r_vector / r_mag * (e2.mass / 200.0)
-                    } else {
-                        Vec2::ZERO
-                    }
-                })
-                .sum::<Vec2>()
-                .neg()
-                * TIME_STEP
-        })
-        .collect::<Vec<Vec2>>();
-
-    bodies
-        .par_iter_mut()
-        .zip(averages)
-        .for_each(|(entity, avg)| {
-            entity.vx += avg.x * TIME_STEP;
-            entity.vy += avg.y * TIME_STEP;
-            entity.x += entity.vx * TIME_STEP;
-            entity.y += entity.vy * TIME_STEP;
-        });
-
-    for (i, (_, mut transform)) in body_query.iter_mut().enumerate() {
-        let updated_body = &bodies[i];
-
-        transform.translation.x = updated_body.x;
-        transform.translation.y = updated_body.y;
+    let mut iter = body_query.iter_combinations_mut();
+    while let Some([(mut e1, _), (e2, _)]) = iter.fetch_next() {
+        let r_vector = e1.r_vector(&*e2);
+        let r_mag = e1.pos().distance(e2.pos());
+        let average = r_vector / r_mag * (e2.mass / 200.0) * TIME_STEP;
+        e1.vx -= average.x;
+        e1.vy -= average.y;
     }
+
+    body_query.for_each_mut(|(mut e, mut t)| {
+        e.x += e.vx * TIME_STEP;
+        e.y += e.vy * TIME_STEP;
+
+        t.translation.x = e.x;
+        t.translation.y = e.y;
+    });
 }
 
 #[derive(Resource)]
@@ -123,7 +99,6 @@ fn main() {
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(LogDiagnosticsPlugin::default())
         .insert_resource(ClearColor(BACKGROUND_COLOR))
-        .insert_resource(World(initialize_bodies()))
         .add_startup_system(add_components)
         .add_system(update_bodies)
         .run();
