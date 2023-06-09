@@ -12,7 +12,7 @@ rayon = "1"
 
 [dependencies.bevy]
 version = "0.10.1"
-features = ["dynamic_linking"]
+# features = ["dynamic_linking"]
 
 [profile.dev]
 opt-level = 1
